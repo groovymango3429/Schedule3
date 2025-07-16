@@ -149,11 +149,13 @@ local function startStateMachine(model)
 	end
 
 	local function start()
+		if isDead then return end -- PATCH: Prevent routing if dead
 		local timeout = math.random(0, Configuration.MaxDawdlingTime)
 		if DEBUG then
 			npcModel.Head.Debugger.Timeout.Text = `Timed out for {timeout}`
 		end
 		task.delay(timeout, function()
+			if isDead then return end -- PATCH: Prevent transition if dead
 			brain:Transition("Routing")
 		end)
 	end
@@ -162,6 +164,7 @@ local function startStateMachine(model)
 	brain:Hook("Idle", start)
 
 	brain:Hook("CalculateRoute", function()
+		if isDead then return end -- PATCH: Prevent transition if dead
 		task.defer(function()
 			local success, path = runCogs("pathing", npcModel)
 			if not success then
@@ -175,6 +178,7 @@ local function startStateMachine(model)
 	end)
 
 	brain:Hook("ExecuteRoute", function()
+		if isDead then return end -- PATCH: Prevent transition if dead
 		task.defer(function()
 			local markers = {}
 			if DEBUG then
@@ -193,6 +197,7 @@ local function startStateMachine(model)
 			end
 
 			for i, waypoint in currentPath do
+				if isDead then break end -- PATCH: Stop moving if dead
 				npcModel.Humanoid:MoveTo(waypoint.Position)
 				if waitUntilTimeout(npcModel.Humanoid.MoveToFinished, Configuration.StuckTimeout) == EVENT_TIMEOUT then
 					warn("Timed out trying to reach waypoint, stopping")
@@ -205,7 +210,9 @@ local function startStateMachine(model)
 				Debris:AddItem(markers[i], 0)
 			end
 
-			brain:Transition("Idling")
+			if not isDead then
+				brain:Transition("Idling")
+			end
 		end)
 	end)
 
