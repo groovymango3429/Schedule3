@@ -145,12 +145,9 @@ function loadSlot(Item)
 	end
 end
 
-local hud = player.PlayerGui:WaitForChild("HUD")
-
 local function updateViewmodel()
 	if equippedTool and equippedTool:IsA("Tool") and equippedTool:GetAttribute("ItemType") == "Weapon" then
 		loadSlot(equippedTool.Name)
-		hud.Enabled = true -- SHOW HUD when weapon equipped
 	else
 		for _, v in pairs(camera:GetChildren()) do
 			if v:IsA("Model") then
@@ -159,7 +156,6 @@ local function updateViewmodel()
 		end
 		framework.viewmodel = nil
 		framework.module = nil
-		hud.Enabled = false -- HIDE HUD when weapon not equipped
 	end
 end
 
@@ -199,46 +195,39 @@ end
 function Shoot()
 	if not framework.module then return end
 	if not CanShootServer() then return end
+	if debounce then return end
+	debounce = true
 
-	if framework.module.fireMode == "Semi" then
-		equipAnim:Stop()
-		reloadAnim:Stop()
-		emptyReloadAnim:Stop()
-		InspectAnim:Stop()
-		idleAnim:Stop()
+	-- Play animation and sound instantly
+	equipAnim:Stop()
+	reloadAnim:Stop()
+	emptyReloadAnim:Stop()
+	InspectAnim:Stop()
+	idleAnim:Stop()
 
-		if framework.module.ammo == 1 then
-			fireAnim:Stop()
-			emptyfireAnim:Play()
-		else
-			emptyfireAnim:Stop()
-			fireAnim:Play()
-		end
-
-		framework.module.ammo -= 1
-
-		-- Play sound instantly for local feedback
-		PlayLocalFireSound()
-
-		game.ReplicatedStorage.Events.Shoot:FireServer(
-			framework.viewmodel and framework.viewmodel:FindFirstChild("Muzzle") and framework.viewmodel.Muzzle.Position or camera.CFrame.Position,
-			mouse.Hit.p
-		)
-
-		if framework.module.ammo == 0 then
-			task.wait(.5)
-			Reload()
-			repeat task.wait() until emptyReloadAnim.IsPlaying == false
-			debounce = false
-		else
-			debounce = true
-			wait(framework.module.fireRate)
-			debounce = false
-		end
+	if framework.module.ammo == 1 then
+		fireAnim:Stop()
+		emptyfireAnim:Play()
+	else
+		emptyfireAnim:Stop()
+		fireAnim:Play()
 	end
 
-	if framework.module.fireMode == "Full Auto" then
-		isShooting = true
+	framework.module.ammo -= 1
+	PlayLocalFireSound()
+	game.ReplicatedStorage.Events.Shoot:FireServer(
+		framework.viewmodel and framework.viewmodel:FindFirstChild("Muzzle") and framework.viewmodel.Muzzle.Position or camera.CFrame.Position,
+		mouse.Hit.p
+	)
+
+	if framework.module.ammo == 0 then
+		task.wait(.5)
+		Reload()
+		repeat task.wait() until emptyReloadAnim.IsPlaying == false
+		debounce = false
+	else
+		wait(framework.module.fireRate)
+		debounce = false
 	end
 end
 
@@ -290,6 +279,8 @@ function updateCameraShake()
 	oldCamCF = newCamCF
 end
 
+local hud = player.PlayerGui:WaitForChild("HUD")
+
 RunService.RenderStepped:Connect(function()
 	if framework.viewmodel then
 		mouse.TargetFilter = framework.viewmodel
@@ -301,10 +292,9 @@ RunService.RenderStepped:Connect(function()
 		swayCF = swayCF:Lerp(CFrame.Angles(math.sin(X) * currentSwayAMT, math.sin(Y) * currentSwayAMT, 0), .1)
 		lastCameraCF = camera.CFrame
 
-		-- HUD update
 		if hud and humanoid then
 			if framework.viewmodel and framework.module then
-				hud.GunName.Text = equippedTool and equippedTool.Name or "" -- Show equipped weapon's name
+				hud.GunName.Text = framework.inventory[framework.currentSlot]
 				hud.Ammo.Text = framework.module.ammo
 				hud.Ammo.MaxAmmo.Text = framework.module.maxAmmo
 			end
@@ -354,15 +344,25 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
+-- INPUT HANDLING FIX
+-- Use mouse input directly, outside of loops, to control isShooting
+mouse.Button1Down:Connect(function()
+	if character and framework.viewmodel and framework.module and framework.module.ammo > 0 and debounce == false and isReloading ~= true and canShoot == true and invF.Visible == false then
+		if framework.module.fireMode == "Full Auto" then
+			isShooting = true
+		else
+			Shoot()
+		end
+	end
+end)
+
+mouse.Button1Up:Connect(function()
+	isShooting = false
+end)
+
 UserInputService.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		isAiming = true
-	end
-
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		if character and framework.viewmodel and framework.module and framework.module.ammo > 0 and debounce == false and isReloading ~= true and canShoot == true and invF.Visible == false then
-			Shoot()
-		end
 	end
 
 	if input.KeyCode == Enum.KeyCode.R then
@@ -372,48 +372,41 @@ UserInputService.InputBegan:Connect(function(input)
 	if input.KeyCode == Enum.KeyCode.F then
 		Inspect()
 	end
+
+	-- Sprint: Start sprinting on LeftShift
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		isSprinting = true
+		-- Optionally, boost WalkSpeed if you want:
+		if humanoid then
+			humanoid.WalkSpeed = 30 -- or your desired sprint speed
+		end
+	end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		isAiming = false
 	end
-end)
 
-while wait() do
-	if isShooting and framework.module and framework.module.ammo > 0 and isReloading ~= true and canShoot == true then
-		if not CanShootServer() then
-			isShooting = false
-			return
+	-- Sprint: Stop sprinting when LeftShift is released
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		isSprinting = false
+		-- Return to normal WalkSpeed:
+		if humanoid then
+			humanoid.WalkSpeed = 17 -- or your normal speed
 		end
-		equipAnim:Stop()
-		reloadAnim:Stop()
-		emptyReloadAnim:Stop()
-		InspectAnim:Stop()
-		idleAnim:Stop()
-		if framework.module.ammo == 1 then
-			fireAnim:Stop()
-			emptyfireAnim:Play()
-		else
-			emptyfireAnim:Stop()
-			fireAnim:Play()
-		end
-		framework.module.ammo -= 1
-		PlayLocalFireSound()
-		game.ReplicatedStorage.Events.Shoot:FireServer(
-			framework.viewmodel and framework.viewmodel:FindFirstChild("Muzzle") and framework.viewmodel.Muzzle.Position or camera.CFrame.Position,
-			mouse.Hit.p
-		)
-		if framework.module.ammo == 0 then
-			task.wait(.5)
-			Reload()
-		end
-		mouse.Button1Up:Connect(function()
-			isShooting = false
-		end)
-		wait(framework.module.fireRate)
 	end
-end
+end)
+-- Full Auto Firing Loop
+spawn(function()
+	while true do
+		wait()
+		if isShooting and framework.module and framework.module.fireMode == "Full Auto"
+			and framework.module.ammo > 0 and not isReloading and canShoot and not debounce then
+			Shoot()
+		end
+	end
+end)
 
 -- Play remote gunfire for other players
 game.ReplicatedStorage.Events.PlayGunSound.OnClientEvent:Connect(function(weaponName, pos)
