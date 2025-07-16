@@ -1,50 +1,56 @@
--- RandomPather, both an example of a cog and the standard functionality.
-
 local CollectionService = game:GetService("CollectionService")
 local PathfindingService = game:GetService("PathfindingService")
 
-local Areas = CollectionService:GetTagged("Justice:Pathfindable")
+local waypointsOrder = {
+	"GasShelf",      -- tag for shelves
+	"GasCheckout",   -- tag for checkout
+	"GasExit"        -- tag for exit
+}
 
--- We expose this bindable here in the cog so that other scripts can modify the map and we can
--- recalculate valid zones, without constantly refetching them every time we want to path
-local RecalculateArea = script.RecalculateArea do
-	RecalculateArea.OnInvoke = function()
-		Areas = CollectionService:GetTagged("Justice:Pathfindable")
-	end
-end
-
--- For performance reasons, we cache every path created for each NPC
-local Paths = {}
-
-local function getRandomLocation()
-	local part = Areas[math.random(1, #Areas)] :: BasePart
-	
-	return (part.CFrame * CFrame.new(
-		math.random(-part.Size.X / 2, part.Size.X / 2),
-		math.random(-part.Size.Y / 2, part.Size.Y / 2),
-		math.random(-part.Size.Z / 2, part.Size.Z / 2)
-	)).Position
+local function getTagged(name)
+	return CollectionService:GetTagged(name)
 end
 
 return {
 	hook = "pathing",
-	priority = 0, -- higher priorities run first
-	execute = function(npcModel: Model)
-		if not Paths[npcModel] then
-			Paths[npcModel] = PathfindingService:CreatePath({ AgentCanJump = false, AgentRadius = 5, Costs = { ["Justice:Deadzone"] = math.huge } })
+	priority = 0,
+	execute = function(npcModel)
+		local currentStep = npcModel:GetAttribute("ShoppingStep") or 1
+
+		if currentStep > #waypointsOrder then
+			currentStep = 1
 		end
-		
-		local path = Paths[npcModel]
-		
-		local ok = pcall(function()
-			path:ComputeAsync(npcModel:GetPivot().Position, getRandomLocation())
+
+		local tagName = waypointsOrder[currentStep]
+		local areas = getTagged(tagName)
+		if #areas == 0 then return false end
+
+		-- Pick a random destination part
+		local destinationPart = areas[math.random(1, #areas)]
+		local destination = destinationPart.Position
+
+		-- Store the target part using an ObjectValue, not attribute!
+		local prevTarget = npcModel:FindFirstChild("TargetPart")
+		if prevTarget and prevTarget:IsA("ObjectValue") then
+			prevTarget:Destroy()
+		end
+		local objVal = Instance.new("ObjectValue")
+		objVal.Name = "TargetPart"
+		objVal.Value = destinationPart
+		objVal.Parent = npcModel
+
+		-- Pathfind to this destination
+		local path = PathfindingService:CreatePath({ AgentCanJump = false, AgentRadius = 2 })
+		local success = pcall(function()
+			path:ComputeAsync(npcModel:GetPivot().Position, destination)
 		end)
-		
-		if not ok or path.Status ~= Enum.PathStatus.Success then
-			warn(`Could not compute random path: {path.Status}`)
+		if not success or path.Status ~= Enum.PathStatus.Success then
 			return false
 		end
-		
+
+		-- Store the next step for this NPC
+		npcModel:SetAttribute("ShoppingStep", currentStep + 1)
+
 		return true, path:GetWaypoints()
 	end,
 }
