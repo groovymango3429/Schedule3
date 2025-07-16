@@ -1,0 +1,20 @@
+-- Configuration 1: The First Part (the second part is in the assets file)
+--
+-- Debug: determines if debug mode is enabled in Studio. This only works in Studio regardless,
+--        so it's safe to leave on even if you publish.
+--
+-- MaxDawdlingTime: How long the NPCs will sit around doing nothing after moving.
+-- StuckTimeout: How long NPCs will try to hit a waypoint before giving up.
+--
+-- NPCCount: The number of NPCs to spawn.
+-- NPCOrigin: Where to spawn the NPCs.
+-- NPCsCollideWithNPCs: Whether NPCs will collide with each other.
+-- NPCsCollideWithPlayers: Whether NPCs will collide with players.
+--
+-- PlayerCollisionGroup: The name of the collision group for players, if you already have one.
+--                       You will need to set this up yourself and add player characters.
+--
+-- Rig: The rig to use. Justice now includes both R6 and R15 rigs (so using R6/R15 is valid) but
+--      you can also add your own. The minimum requirements are a Humanoid, Shirt, Pants, Body
+--      Colors, Head, and Animation script. A rig with those parts is a valid Justice rig. Make
+--      sure to set the PrimaryPart too.
