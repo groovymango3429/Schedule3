@@ -4,6 +4,7 @@ local humanoid = character:WaitForChild("Humanoid")
 
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local camera = game.Workspace.CurrentCamera
 local dof = game.Lighting.DepthOfField
 local aimCF = CFrame.new()
@@ -192,13 +193,60 @@ function CanShootServer()
 	return game.ReplicatedStorage.Events.CanShoot:InvokeServer()
 end
 
+-- Returns true if the part is a body part of an NPC (checks for a Model with a Humanoid)
+local function IsNPCBodyPart(part)
+	if not part or not part:IsA("BasePart") then return false end
+	local model = part:FindFirstAncestorOfClass("Model")
+	if not model then return false end
+	if model:FindFirstChildOfClass("Humanoid") then
+		local bodyParts = {
+			Head = true,
+			Torso = true,
+			HumanoidRootPart = true,
+			LeftArm = true,
+			RightArm = true,
+			LeftLeg = true,
+			RightLeg = true,
+			UpperTorso = true,
+			LowerTorso = true,
+			LeftHand = true,
+			RightHand = true,
+			LeftFoot = true,
+			RightFoot = true,
+			-- Add any others for your rig
+		}
+		return bodyParts[part.Name] ~= nil
+	end
+	return false
+end
+
+function ShowHitOutline(part)
+	if not IsNPCBodyPart(part) then return end
+	if part:FindFirstChild("ClientHitHighlight") then
+		part.ClientHitHighlight:Destroy()
+	end
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "ClientHitHighlight"
+	highlight.Adornee = part
+	highlight.FillTransparency = 1
+	highlight.OutlineTransparency = 0
+	highlight.OutlineColor = Color3.new(1,0,0)
+	highlight.Parent = part
+
+	local tween = TweenService:Create(highlight, TweenInfo.new(1), {OutlineTransparency = 1})
+	task.delay(1, function()
+		tween:Play()
+		tween.Completed:Wait()
+		highlight:Destroy()
+	end)
+end
+
 function Shoot()
 	if not framework.module then return end
 	if not CanShootServer() then return end
 	if debounce then return end
 	debounce = true
 
-	-- Play animation and sound instantly
 	equipAnim:Stop()
 	reloadAnim:Stop()
 	emptyReloadAnim:Stop()
@@ -215,10 +263,20 @@ function Shoot()
 
 	framework.module.ammo -= 1
 	PlayLocalFireSound()
-	game.ReplicatedStorage.Events.Shoot:FireServer(
-		framework.viewmodel and framework.viewmodel:FindFirstChild("Muzzle") and framework.viewmodel.Muzzle.Position or camera.CFrame.Position,
-		mouse.Hit.p
-	)
+
+	-- Local Raycast for hit detection (only highlights body parts of NPCs)
+	local origin = framework.viewmodel and framework.viewmodel:FindFirstChild("Muzzle") and framework.viewmodel.Muzzle.Position or camera.CFrame.Position
+	local direction = (mouse.Hit.p - origin).Unit * 100
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+	rayParams.FilterDescendantsInstances = {player.Character, framework.viewmodel}
+
+	local result = workspace:Raycast(origin, direction, rayParams)
+	if result and result.Instance and result.Instance:IsA("BasePart") then
+		ShowHitOutline(result.Instance)
+	end
+
+	game.ReplicatedStorage.Events.Shoot:FireServer(origin, mouse.Hit.p)
 
 	if framework.module.ammo == 0 then
 		task.wait(.5)
@@ -344,8 +402,6 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- INPUT HANDLING FIX
--- Use mouse input directly, outside of loops, to control isShooting
 mouse.Button1Down:Connect(function()
 	if character and framework.viewmodel and framework.module and framework.module.ammo > 0 and debounce == false and isReloading ~= true and canShoot == true and invF.Visible == false then
 		if framework.module.fireMode == "Full Auto" then
@@ -373,12 +429,10 @@ UserInputService.InputBegan:Connect(function(input)
 		Inspect()
 	end
 
-	-- Sprint: Start sprinting on LeftShift
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		isSprinting = true
-		-- Optionally, boost WalkSpeed if you want:
 		if humanoid then
-			humanoid.WalkSpeed = 30 -- or your desired sprint speed
+			humanoid.WalkSpeed = 30
 		end
 	end
 end)
@@ -388,16 +442,14 @@ UserInputService.InputEnded:Connect(function(input)
 		isAiming = false
 	end
 
-	-- Sprint: Stop sprinting when LeftShift is released
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		isSprinting = false
-		-- Return to normal WalkSpeed:
 		if humanoid then
-			humanoid.WalkSpeed = 17 -- or your normal speed
+			humanoid.WalkSpeed = 17
 		end
 	end
 end)
--- Full Auto Firing Loop
+
 spawn(function()
 	while true do
 		wait()
@@ -408,7 +460,6 @@ spawn(function()
 	end
 end)
 
--- Play remote gunfire for other players
 game.ReplicatedStorage.Events.PlayGunSound.OnClientEvent:Connect(function(weaponName, pos)
 	local moduleFolder = game.ReplicatedStorage.Modules
 	local weaponModule = moduleFolder:FindFirstChild(weaponName)
