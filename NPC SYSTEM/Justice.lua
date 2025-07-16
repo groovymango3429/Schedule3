@@ -98,13 +98,28 @@ local function ragdollNPC(model)
 			ballSocket.Attachment0 = att0
 			ballSocket.Attachment1 = att1
 			ballSocket.Parent = part0
+
+			-- Restrict neck rotation for realism
+			if motor.Name == "Neck" then
+				ballSocket.LimitsEnabled = true
+				ballSocket.UpperAngle = 45 -- Limit side-to-side tilt
+				ballSocket.TwistLimitsEnabled = true
+				ballSocket.TwistLowerAngle = -45
+				ballSocket.TwistUpperAngle = 45 -- Limit head twisting
+			end
+
 			motor:Destroy()
 		end
 	end
-	-- Enable collisions on all body parts
+	-- Enable collisions and assign CollisionGroup on all body parts, add damping to prevent endless rotation
 	for _, part in ipairs(model:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.CanCollide = true
+			part.CollisionGroup = "Justice:NPC"
+			pcall(function()
+				part.AngularDamping = 3 -- prevents endless spinning
+				part.LinearDamping = 0.5 -- helps limbs settle and not slide forever
+			end)
 		end
 	end
 end
