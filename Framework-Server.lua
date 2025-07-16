@@ -71,8 +71,25 @@ ReplicatedStorage.Events.Shoot.OnServerEvent:Connect(function(player, muzzlePos,
 
 	local direction = (aimPos - muzzlePos).Unit * 500
 	local rayParams = RaycastParams.new()
-	rayParams.FilterDescendantsInstances = {char}
+
+	-- Blacklist shooter and all accessory handles in workspace (players and NPCs)
+	local blacklist = {char}
+	for _, model in ipairs(workspace:GetChildren()) do
+		if model:IsA("Model") then
+			for _, accessory in ipairs(model:GetChildren()) do
+				if accessory:IsA("Accessory") then
+					local handle = accessory:FindFirstChild("Handle")
+					if handle and handle:IsA("BasePart") then
+						table.insert(blacklist, handle)
+					end
+				end
+			end
+		end
+	end
+
+	rayParams.FilterDescendantsInstances = blacklist
 	rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+
 	local result = workspace:Raycast(muzzlePos, direction, rayParams)
 
 	if result and result.Instance and result.Instance.Parent then
