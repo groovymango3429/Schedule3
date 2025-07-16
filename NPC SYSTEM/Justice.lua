@@ -150,7 +150,7 @@ local function startStateMachine(model)
 
 	local function start()
 		if isDead then return end -- PATCH: Prevent routing if dead
-		local timeout = math.random(0, Configuration.MaxDawdlingTime)
+		local timeout = math.random(4, Configuration.MaxDawdlingTime)
 		if DEBUG then
 			npcModel.Head.Debugger.Timeout.Text = `Timed out for {timeout}`
 		end
@@ -198,6 +198,18 @@ local function startStateMachine(model)
 
 			for i, waypoint in currentPath do
 				if isDead then break end -- PATCH: Stop moving if dead
+
+				-- Match NPC orientation to the block it's moving to
+				if waypoint.CFrame then
+					npcModel:PivotTo(waypoint.CFrame)
+				else
+					-- Fallback: face the block position if only Position is available
+					local root = npcModel.PrimaryPart or npcModel:FindFirstChild("HumanoidRootPart")
+					if root and waypoint.Position then
+						root.CFrame = CFrame.new(root.Position, waypoint.Position)
+					end
+				end
+
 				npcModel.Humanoid:MoveTo(waypoint.Position)
 				if waitUntilTimeout(npcModel.Humanoid.MoveToFinished, Configuration.StuckTimeout) == EVENT_TIMEOUT then
 					warn("Timed out trying to reach waypoint, stopping")
