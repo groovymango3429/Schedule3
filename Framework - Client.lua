@@ -27,6 +27,12 @@ local swayCF = CFrame.new()
 local lastCameraCF = CFrame.new()
 local fireAnim, equipAnim, deequipAnim, emptyfireAnim, reloadAnim, emptyReloadAnim, InspectAnim, idleAnim = nil, nil, nil, nil, nil, nil, nil, nil
 
+local DEFAULT_FOV = 70
+local AIM_FOV = 60
+local fovTween = nil
+
+camera.FieldOfView = DEFAULT_FOV
+
 local framework = {
 	inventory = {
 		"TROY DEFENSE AR";
@@ -187,6 +193,7 @@ player.CharacterAdded:Connect(function(char)
 	character = char
 	humanoid = character:WaitForChild("Humanoid")
 	onCharacterAdded(char)
+	camera.FieldOfView = DEFAULT_FOV
 end)
 
 function CanShootServer()
@@ -198,26 +205,9 @@ local function IsNPCBodyPart(part)
 	if not part or not part:IsA("BasePart") then return false end
 	local model = part:FindFirstAncestorOfClass("Model")
 	if not model then return false end
-	if model:FindFirstChildOfClass("Humanoid") then
-		local bodyParts = {
-			Head = true,
-			Torso = true,
-			HumanoidRootPart = true,
-			LeftArm = true,
-			RightArm = true,
-			LeftLeg = true,
-			RightLeg = true,
-			UpperTorso = true,
-			LowerTorso = true,
-			LeftHand = true,
-			RightHand = true,
-			LeftFoot = true,
-			RightFoot = true,
-			-- Add any others for your rig
-		}
-		return bodyParts[part.Name] ~= nil
-	end
-	return false
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	if not humanoid or model == character then return false end -- Don't highlight own character
+	return true
 end
 
 function ShowHitOutline(part)
@@ -239,6 +229,32 @@ function ShowHitOutline(part)
 		tween.Completed:Wait()
 		highlight:Destroy()
 	end)
+end
+
+-- Collect all accessory handles (hair/hats) in workspace for raycast blacklist
+function getAllAccessoryHandles()
+	local handles = {}
+	for _, model in ipairs(workspace:GetChildren()) do
+		if model:IsA("Model") then
+			for _, accessory in ipairs(model:GetChildren()) do
+				if accessory:IsA("Accessory") then
+					local handle = accessory:FindFirstChild("Handle")
+					if handle and handle:IsA("BasePart") then
+						table.insert(handles, handle)
+					end
+				end
+			end
+		end
+	end
+	return handles
+end
+
+function TweenCameraFOV(targetFOV)
+	if fovTween then
+		fovTween:Cancel()
+	end
+	fovTween = TweenService:Create(camera, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {FieldOfView = targetFOV})
+	fovTween:Play()
 end
 
 function Shoot()
@@ -264,12 +280,18 @@ function Shoot()
 	framework.module.ammo -= 1
 	PlayLocalFireSound()
 
-	-- Local Raycast for hit detection (only highlights body parts of NPCs)
+	-- Local Raycast for hit detection (blacklist all accessory handles)
 	local origin = framework.viewmodel and framework.viewmodel:FindFirstChild("Muzzle") and framework.viewmodel.Muzzle.Position or camera.CFrame.Position
 	local direction = (mouse.Hit.p - origin).Unit * 100
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-	rayParams.FilterDescendantsInstances = {player.Character, framework.viewmodel}
+
+	-- Blacklist your own character, the viewmodel, and all accessory handles in workspace
+	local blacklist = {player.Character, framework.viewmodel}
+	for _, handle in ipairs(getAllAccessoryHandles()) do
+		table.insert(blacklist, handle)
+	end
+	rayParams.FilterDescendantsInstances = blacklist
 
 	local result = workspace:Raycast(origin, direction, rayParams)
 	if result and result.Instance and result.Instance:IsA("BasePart") then
@@ -419,6 +441,7 @@ end)
 UserInputService.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		isAiming = true
+		TweenCameraFOV(AIM_FOV)
 	end
 
 	if input.KeyCode == Enum.KeyCode.R then
@@ -440,6 +463,7 @@ end)
 UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		isAiming = false
+		TweenCameraFOV(DEFAULT_FOV)
 	end
 
 	if input.KeyCode == Enum.KeyCode.LeftShift then
